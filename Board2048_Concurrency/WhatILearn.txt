@@ -1,0 +1,6 @@
+1. It's very hard to use "getch()" if you want to using the "do not echo and need not enter a ENTER" function!
+To fullfill it, we can change the STDOUT_FILENO attribution!!!
+
+2. try{ throw exception();}catch(exception e){}
+is a very useful tool
+
