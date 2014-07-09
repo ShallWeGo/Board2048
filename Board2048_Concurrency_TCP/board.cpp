@@ -6,72 +6,61 @@
 #include<stdlib.h>
 #include<assert.h>
 #include<sys/socket.h>
+#include<netinet/in.h>
 #include<map>
 share shared = {PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER};
-/*
-void* getInput(void *arg){
-        while(1){
-                /* 条件变量当然有个条件，只有对于那些nready为0的，说明
-                   有人正在阻塞等待中，所以要激活他们 */
-                pthread_mutex_lock(&shared.mutex);
-                char ch = getch();
-                shared.Way = ch;
-                if(shared.nready==0)
-                        pthread_cond_signal(&shared.cond);
-                shared.nready++;
-                pthread_mutex_unlock(&shared.mutex);
-		*//* Must insert a delay to insure condition can be ivoked!!!! */
-		/*usleep(1000);
-        }
-}
-*/
-/*
-		#define SERV_PORT	9800
-		#define BACKLOG 10
-		#define MAXLINE 128
-*/
+#define SERV_PORT	9877
+#define BACKLOG 10
+#define MAXLINE 128
+
 void *getInput(void* arg){
 			int listenfd,connfd;
-			struct sockaddr_in servaddr, clientaddr, clientlen;
+			struct sockaddr_in servaddr, clientaddr;
+			socklen_t clientlen;
 			
 			/* Server config */
 			bzero(&servaddr, sizeof(servaddr));
 			servaddr.sin_family = AF_INET;
 			servaddr.sin_port = htons(SERV_PORT);
-			servaddr.sin_addr.s_addr = INADDR_ANY;
-			if(listenfd = socket(AF_INET, SOCK_STREAM, 0)<0){
+			servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+			if((listenfd = socket(AF_INET, SOCK_STREAM, 0))<0){
 						perror("socket create failed!");
 						exit(1);
 			}
-			if(bind(listenfd, (struct sockaddr*)servaddr, sizeof(servaddr))<0){
+			if(bind(listenfd, (struct sockaddr*)&servaddr, sizeof(servaddr))<0){
 						perror("bind error!");
 						exit(1);
 			}
 			if(listen(listenfd, BACKLOG)<0){
-						peeor("listen failed!");
+						perror("listen failed!");
 			}
 			
 			/* select config */
-			fd_set mset;
-			int maxfd;
-			char readbuff[MAXLINE+1];
+			fd_set mset, allset;
+			int maxfd,n;
+			char readbuf[MAXLINE+1];
 			map<int, struct sockaddr_in*> nmap;
 			FD_ZERO(&mset);
-			FD_SET(listenfd, &mset);
-			maxfd = listenfd+1;
+			FD_ZERO(&allset);
+			maxfd = listenfd;
+			FD_SET(listenfd, &allset);
 			
 			/* monitor the input client and new client */
 			for(;;){
-						select(maxfd, mset, 0, 0, NULL);
+						mset = allset;
+						select(maxfd+1, &mset, NULL, NULL, NULL);
 						if(FD_ISSET(listenfd, &mset)){
-									connfd = accept(listenfd, (struct sockaddr*)&clientaddr, &clientlen);
-									if(connfd> maxfd-1)
-												maxfd = connfd+1;
-									nmap[connfd] = &clientaddr;
-									FD_SET(connfd, &mset);
+								connfd = accept(listenfd, (struct sockaddr*)&clientaddr, &clientlen);
+								if(connfd>maxfd)
+									maxfd = connfd;
+								nmap[connfd] = &clientaddr;
+								FD_SET(connfd, &allset);
+								continue;
 						}
-						for(int i=0;i<maxfd;i++){
-									if(FD_ISSET(i, &mset) && (n = read(i, readbuf, MAXLINE))!=0){
+						for(map<int, struct sockaddr_in*>::iterator iter = nmap.begin();iter!=nmap.end();iter++){
+									int tempfd = iter->first;
+									if(!FD_ISSET(tempfd, &mset) ){ continue;}
+									else if ((n = recv(tempfd, readbuf, MAXLINE,0))!=0){
 												pthread_mutex_lock(&shared.mutex);
 												shared.Way = (char)(readbuf[0]);
 												if(shared.nready==0)
@@ -81,20 +70,14 @@ void *getInput(void* arg){
 	                			//usleep(1000);//有了select，应该可以不用sleep了
 	                			break;
 			            }		
+				   else{
+						printf("nothing recved! %d \n", iter->first);
+						break;
+					}
+					
 						}
 			}
 					
-}
-
-int getch(){
-         termios org_opts, new_opts;
-         tcgetattr(STDIN_FILENO, &org_opts);                                 //>保存原设置
-         memcpy(&new_opts, &org_opts, sizeof(new_opts));
-     new_opts.c_lflag &= ~(ICANON | ECHO | ECHOE | ECHOK | ECHONL | ECHOPRT | ECHOKE | ICRNL);
-     tcsetattr(STDIN_FILENO, TCSANOW, &new_opts);
-     int c = getchar();
-     tcsetattr(STDIN_FILENO, TCSANOW, &org_opts);
-     return c;
 }
 
 
